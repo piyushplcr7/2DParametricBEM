@@ -1,0 +1,8 @@
+# Ignore build and lib dirs
+build
+lib/*
+
+# Ignore any executables 
+bin/*
+doxygen/html
+doxygen/latex
