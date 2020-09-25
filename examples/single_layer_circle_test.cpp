@@ -6,12 +6,12 @@
 #include <string>
 #include <vector>
 
-#include <Eigen/Dense>
-#include <Eigen/Eigenvalues>
 #include "discontinuous_space.hpp"
 #include "parametrized_circular_arc.hpp"
 #include "parametrized_mesh.hpp"
 #include "single_layer.hpp"
+#include <Eigen/Dense>
+#include <Eigen/Eigenvalues>
 
 #define _USE_MATH_DEFINES // for Pi
 

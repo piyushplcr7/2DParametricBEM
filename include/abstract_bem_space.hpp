@@ -9,12 +9,13 @@
 #define ABSTRACTBEMSPACEHPP
 
 #include <cassert>
+#include <exception>
 #include <functional>
 #include <utility>
 #include <vector>
 
-#include <Eigen/Dense>
 #include "parametrized_mesh.hpp"
+#include <Eigen/Dense>
 
 namespace parametricbem2d {
 /**
@@ -29,14 +30,31 @@ public:
    * \f$\eqref{eq:lgm}\f$. This is a pure virtual function and has to be
    * implemented in the derived classes.
    *
-   * @param q Index of the local/reference shape function
-   * @param n Index of the panel for which this map is applied
+   * @param q Index of the local/reference shape function (>=1)
+   * @param n Index of the panel for which this map is applied (>=1)
    * @param N Total number of panels in the mesh
    * @return Integer denoting the global shape function number corresponding
    *         to the local shape function indexed by q for the panel no. n
    */
   virtual unsigned int LocGlobMap(unsigned int q, unsigned int n,
                                   unsigned int N) const = 0;
+
+  /**
+   * This function maps a local shape function to the corresponding global shape
+   * function for a BEM space on the given number of panels, defined in
+   * \f$\eqref{eq:lgm}\f$. This is a pure virtual function and has to be
+   * implemented in the derived classes.
+   *
+   * @param q Index of the local/reference shape function (>=1)
+   * @param n Index of the panel for which this map is applied (>=1)
+   * @param mesh The mesh object for which the mapping is to be done
+   * @return Integer denoting the global shape function number corresponding
+   *         to the local shape function indexed by q for the panel no. n
+   */
+  virtual unsigned int LocGlobMap2(unsigned int q, unsigned int n,
+                                   const ParametrizedMesh &mesh) const {
+    return 0;
+  }
 
   /**
    * This function is used for querying the parameter interval.
@@ -70,9 +88,11 @@ public:
    */
   double evaluateShapeFunction(unsigned int q, double t) const {
     // Asserting that the requested shape function index is valid
-    assert(q < q_);
+    if (!(q < q_))
+      throw std::out_of_range("Shape function index out of range!");
     // Asserting that the evaluation point is within parameter domain
-    assert(IsWithinParameterRange(t));
+    if (!(IsWithinParameterRange(t)))
+      throw std::out_of_range("Parameter for parametric curve not in range!");
     // Evaluating the requested reference shape function which is stored in a
     // vector with others
     return referenceshapefunctions_[q](t);
@@ -86,9 +106,11 @@ public:
    */
   double evaluateShapeFunctionDot(unsigned int q, double t) const {
     // Asserting that the requested shape function index is valid
-    assert(q < q_);
+    if (!(q < q_))
+      throw std::out_of_range("Shape function index out of range!");
     // Asserting that the evaluation point is within parameter domain
-    assert(IsWithinParameterRange(t));
+    if (!(IsWithinParameterRange(t)))
+      throw std::out_of_range("Parameter for parametric curve not in range!");
     // Evaluating the requested reference shape function which is stored in a
     // vector with others
     return referenceshapefunctiondots_[q](t);
@@ -126,7 +148,7 @@ public:
    * This function interpolates the function func, provided as an input of the
    * form std::function<double(double,double)>, on the given mesh. It is a pure
    * virtual function which uses the BEM space implementation for the
-   * interpolation. The output is a vector \f$c_{i}\f$ which containes the
+   * interpolation. The output is a vector \f$c_{i}\f$ which contains the
    * interpolation coefficients such that \f$func =
    * \sum_{i=1}^{N}c_{i}b_{i}^{N}\f$ on the mesh.
    *

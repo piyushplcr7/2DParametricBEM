@@ -63,6 +63,8 @@ PanelVector ParametrizedCircularArc::split(unsigned int N) const {
     // Partitioning by splitting the polar angle
     double phi_start = phi_start_ + i * (phi_end_ - phi_start_) / N;
     double phi_end = phi_start_ + (i + 1) * (phi_end_ - phi_start_) / N;
+    if (i==N-1)
+      phi_end = phi_end_;
     // Adding the part parametrization to the vector with a shared pointer
     parametrization_parts.push_back(std::make_shared<ParametrizedCircularArc>(
         center_, radius_, phi_start, phi_end));

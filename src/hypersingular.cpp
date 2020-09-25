@@ -19,6 +19,7 @@
 #include "abstract_parametrized_curve.hpp"
 #include "discontinuous_space.hpp"
 #include "gauleg.hpp"
+#include "integral_gauss.hpp"
 #include "logweight_quadrature.hpp"
 #include "parametrized_mesh.hpp"
 #include <Eigen/Dense>
@@ -34,8 +35,8 @@ Eigen::MatrixXd InteractionMatrix(const AbstractParametrizedCurve &pi,
   if (&pi == &pi_p) // Same Panels case
     return ComputeIntegralCoinciding(pi, pi_p, space, GaussQR);
 
-  else if (fabs((pi(1) - pi_p(-1)).norm()) < tol ||
-           fabs((pi(-1) - pi_p(1)).norm()) < tol) // Adjacent Panels case
+  else if ((pi(1) - pi_p(-1)).norm() / 100. < tol ||
+           (pi(-1) - pi_p(1)).norm() / 100. < tol) // Adjacent Panels case
     return ComputeIntegralAdjacent(pi, pi_p, space, GaussQR);
 
   else // Disjoint panels case
@@ -48,6 +49,7 @@ Eigen::MatrixXd ComputeIntegralCoinciding(const AbstractParametrizedCurve &pi,
                                           const QuadRule &GaussQR) {
   unsigned N = GaussQR.n; // Quadrature order for the GaussQR object. Same order
                           // to be used for log weighted quadrature
+                          // std::cout << "Coinciding" << std::endl;
   int Q = space.getQ(); // No. of Reference Shape Functions in trial/test space
   // Interaction matrix with size Q x Q
   Eigen::MatrixXd interaction_matrix(Q, Q);
@@ -94,25 +96,15 @@ Eigen::MatrixXd ComputeIntegralCoinciding(const AbstractParametrizedCurve &pi,
                F(0.5 * (w + z)) * G(0.5 * (w - z));
       };
 
-      // Getting log weighted quadrature nodes and weights
-      QuadRule logweightQR = getLogWeightQR(2., N);
-
-      // Double loop for 2nd double integral \f$\eqref{eq:I21}\f$
-      for (unsigned int i = 0; i < N; ++i) {
-        // Outer integral evaluated with Log weighted quadrature
-        double z = logweightQR.x(i);
-        double inner = 0.;
-        // Evaluating the inner integral for fixed z
-        for (unsigned int j = 0; j < N; ++j) {
-          // Scaling Gauss Legendre quadrature nodes to the integral limits
-          double w = GaussQR.x(j) * (2 - z);
-          inner += GaussQR.w(j) * integrand2(w, z);
-        }
-        // Multiplying the integral with appropriate constants for
-        // transformation to w from Gauss Legendre nodes
-        inner *= (2 - z);
-        i2 += logweightQR.w(i) * inner;
-      }
+      // Integral of integrand2 above w.r.t. w, as a function of z
+      auto inner2_z = [&](double z) {
+        // Integrand 2 as a function of w only (fixed z), to integrate w.r.t. w
+        auto integrand2_w = [&](double w) { return integrand2(w, z); };
+        // Computing the integral w.r.t. w
+        return ComputeIntegral(integrand2_w, -2 + z, 2 - z, GaussQR);
+      };
+      // i2 = ComputeLogwtIntegral(inner2_z, 2,GaussQR);
+      i2 = ComputeLoogIntegral(inner2_z, 2, GaussQR);
       // Filling the matrix entry
       interaction_matrix(i, j) = -1. / (2. * M_PI) * (i1 + 0.5 * i2);
     }
@@ -126,23 +118,28 @@ Eigen::MatrixXd ComputeIntegralAdjacent(const AbstractParametrizedCurve &pi,
                                         const QuadRule &GaussQR) {
   unsigned N = GaussQR.n; // Quadrature order for the GaussQR object. Same order
                           // to be used for log weighted quadrature
+                          // std::cout << "adjacent" << std::endl;
   int Q = space.getQ(); // No. of Reference Shape Functions in trial/test space
   // Interaction matrix with size Q x Q
   Eigen::MatrixXd interaction_matrix(Q, Q);
   // Computing the (i,j)th matrix entry
   for (int i = 0; i < Q; ++i) {
     for (int j = 0; j < Q; ++j) {
-      // Panel lengths for local arclength parametrization in
-      // \f$\eqref{eq:ap}\f$. Actual values are not required so a length of 1 is
-      // used for both the panels
-      double length_pi = 1.;   // Length for panel pi
-      double length_pi_p = 1.; // Length for panel pi_p
-
       // when transforming the parametrizations from [-1,1]->\Pi to local
       // arclength parametrizations [0,|\Pi|] -> \Pi, swap is used to ensure
       // that the common point between the panels corresponds to the parameter 0
       // in both arclength parametrizations
-      bool swap = (pi(1) != pi_p(-1));
+      bool swap = (pi(1) - pi_p(-1)).norm() / 100. >
+                  std::numeric_limits<double>::epsilon();
+
+      double length_pi =
+          2 * pi.Derivative(swap ? -1 : 1)
+                  .norm(); // Length for panel pi to ensure norm of arclength
+                           // parametrization is 1 at the common point
+      double length_pi_p =
+          2 * pi_p.Derivative(swap ? 1 : -1)
+                  .norm(); // Length for panel pi_p to ensure norm of arclength
+                           // parametrization is 1 at the common point
 
       // Lambda expressions for the functions F,G and D(r,phi) in
       // \f$\eqref{eq:Isplitapn}\f$
@@ -175,7 +172,8 @@ Eigen::MatrixXd ComputeIntegralAdjacent(const AbstractParametrizedCurve &pi,
         if (r > sqrt_epsilon) // Away from singularity, simply use the formula
           return (pi(s) - pi_p(t)).squaredNorm() / r / r;
         else // Near singularity, use analytically evaluated limit for r -> 0
-          return 1 - sin(2 * phi) * pi.Derivative(s).dot(pi_p.Derivative(t));
+          return 1 + sin(2 * phi) * pi.Derivative(s).dot(pi_p.Derivative(t)) *
+                         4 / length_pi / length_pi_p;
       };
 
       // The two integrals in \f$\eqref{eq:Isplitapn}\f$ have to be further
@@ -183,8 +181,42 @@ Eigen::MatrixXd ComputeIntegralAdjacent(const AbstractParametrizedCurve &pi,
       // where phi goes from alpha to pi/2
       double alpha = atan(length_pi_p / length_pi); // the split point
 
+      // Integrand for the second double integral in equation
+      // \f$\eqref{eq:Isplitapn}\f$, without the log weight
+      auto integrand2 = [&](double r, double phi) {
+        return r * F(r * sin(phi)) * G(r * cos(phi));
+      };
+
+      // Part 1 of second double integral, integrated only in r, as a function
+      // of phi (phi from 0 to alpha)
+      auto inner21 = [&](double phi) {
+        // Integrand as a function of r only (fixed phi), to calculate the inner
+        // integral
+        auto in = [&](double r) { return integrand2(r, phi); };
+        // Integrating the inner integral in r using log weighted quadrature
+        // return ComputeLogwtIntegral(in,length_pi/cos(phi),GaussQR);
+        return ComputeLoogIntegral(in, length_pi / cos(phi), GaussQR);
+      };
+
+      // Part 2 of second double integral, integrated only in r, as a function
+      // of phi (phi from alpha to pi/2)
+      auto inner22 = [&](double phi) {
+        // Integrand as a function of r only (fixed phi), to calculate the inner
+        // integral
+        auto in = [&](double r) { return integrand2(r, phi); };
+        // Integrating the inner integral in r using log weighted quadrature
+        // return ComputeLogwtIntegral(in,length_pi_p/sin(phi),GaussQR);
+        return ComputeLoogIntegral(in, length_pi_p / sin(phi), GaussQR);
+      };
+
       // i_IJ -> Integral I, part J
       double i11 = 0., i21 = 0., i12 = 0., i22 = 0.;
+      // Computing both the parts of the second integral by integrating the
+      // inner integrals w.r.t. phi
+      i21 = ComputeIntegral(inner21, 0, alpha, GaussQR);
+      i22 = ComputeIntegral(inner22, alpha, M_PI / 2, GaussQR);
+      // Computing the first integral
+
       // part 1 (phi from 0 to alpha)
       for (unsigned int i = 0; i < N; ++i) {
         // Transforming gauss quadrature node into phi
@@ -193,22 +225,12 @@ Eigen::MatrixXd ComputeIntegralAdjacent(const AbstractParametrizedCurve &pi,
         // Inner integral for double integral 1, evaluated with Gauss Legendre
         // quadrature
         double inner1 = 0.;
-        // Inner integral for double integral 2, evaluated with Log weighted
-        // Gauss quadrature
-        double inner2 = 0.;
         // Upper limit for inner 'r' integral
         double rmax = length_pi / cos(phi);
         // Evaluating the inner 'r' integral
         for (unsigned int j = 0; j < N; ++j) {
-          // Getting Quadrature weights and nodes for Log weighted Gauss
-          // quadrature
-          QuadRule logweightQR = getLogWeightQR(rmax, N);
-          // Evaluating inner2 using Log weighted Gauss quadrature
-          double r = logweightQR.x(j);
-          inner2 += logweightQR.w(j) * r * F(r * sin(phi)) * G(r * cos(phi));
-
           // Evaluating inner1 using Gauss Legendre quadrature
-          r = rmax / 2 * (1 + GaussQR.x(j));
+          double r = rmax / 2 * (1 + GaussQR.x(j));
           inner1 += GaussQR.w(j) * r * log(D_r_phi(r, phi)) * F(r * sin(phi)) *
                     G(r * cos(phi));
         }
@@ -218,7 +240,6 @@ Eigen::MatrixXd ComputeIntegralAdjacent(const AbstractParametrizedCurve &pi,
         // Multiplying the integrals with appropriate constants for
         // transformation to phi from Gauss Legendre nodes
         i11 += GaussQR.w(i) * inner1 * alpha / 2;
-        i21 += GaussQR.w(i) * inner2 * alpha / 2;
       }
 
       // part 2 (phi from alpha to pi/2)
@@ -230,22 +251,12 @@ Eigen::MatrixXd ComputeIntegralAdjacent(const AbstractParametrizedCurve &pi,
         // Inner integral for double integral 1, evaluated with Gauss Legendre
         // quadrature
         double inner1 = 0.;
-        // Inner integral for double integral 2, evaluated with Log weighted
-        // Gauss quadrature
-        double inner2 = 0.;
         // Upper limit for inner 'r' integral
         double rmax = length_pi_p / sin(phi);
         // Evaluating the inner 'r' integral
         for (unsigned int j = 0; j < N; ++j) {
-          // Getting Quadrature weights and nodes for Log weighted Gauss
-          // quadrature
-          QuadRule logweightQR = getLogWeightQR(rmax, N);
-          // Evaluating inner2 using Log weighted Gauss quadrature
-          double r = logweightQR.x(j);
-          inner2 += logweightQR.w(j) * r * F(r * sin(phi)) * G(r * cos(phi));
-
           // Evaluating inner1 using Gauss Legendre quadrature
-          r = rmax / 2 * (1 + GaussQR.x(j));
+          double r = rmax / 2 * (1 + GaussQR.x(j));
           inner1 += GaussQR.w(j) * r * log(D_r_phi(r, phi)) * F(r * sin(phi)) *
                     G(r * cos(phi));
         }
@@ -255,7 +266,6 @@ Eigen::MatrixXd ComputeIntegralAdjacent(const AbstractParametrizedCurve &pi,
         // Multiplying the integrals with appropriate constants for
         // transformation to phi from Gauss Legendre quadrature nodes
         i12 += GaussQR.w(i) * inner1 * (M_PI / 2. - alpha) / 2.;
-        i22 += GaussQR.w(i) * inner2 * (M_PI / 2. - alpha) / 2.;
       }
       // Summing up the parts to get the final integral
       double integral = 0.5 * (i11 + i12) + (i21 + i22);
@@ -275,6 +285,7 @@ Eigen::MatrixXd ComputeIntegralGeneral(const AbstractParametrizedCurve &pi,
                                        const QuadRule &GaussQR) {
   unsigned N = GaussQR.n; // Quadrature order for the GaussQR object. Same order
                           // to be used for log weighted quadrature
+                          // std::cout << "Gen" << std::endl;
   int Q = space.getQ(); // No. of Reference Shape Functions in trial/test space
   // Interaction matrix with size Q x Q
   Eigen::MatrixXd interaction_matrix(Q, Q);
@@ -333,8 +344,10 @@ Eigen::MatrixXd GalerkinMatrix(const ParametrizedMesh mesh,
       // Local to global mapping of the elements in interaction matrix
       for (unsigned int I = 0; I < Q; ++I) {
         for (unsigned int J = 0; J < Q; ++J) {
-          int II = space.LocGlobMap(I + 1, i + 1, numpanels) - 1;
-          int JJ = space.LocGlobMap(J + 1, j + 1, numpanels) - 1;
+          // int II = space.LocGlobMap(I + 1, i + 1, numpanels) - 1;
+          // int JJ = space.LocGlobMap(J + 1, j + 1, numpanels) - 1;
+          int II = space.LocGlobMap2(I + 1, i + 1, mesh) - 1;
+          int JJ = space.LocGlobMap2(J + 1, j + 1, mesh) - 1;
           // Filling the Galerkin matrix entries
           output(II, JJ) += interaction_matrix(I, J);
         }

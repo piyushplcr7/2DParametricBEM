@@ -20,10 +20,12 @@
 namespace parametricbem2d {
 using CoefficientsList = typename ParametrizedFourierSum::CoefficientsList;
 
-ParametrizedFourierSum::ParametrizedFourierSum(CoefficientsList cos_list,
+ParametrizedFourierSum::ParametrizedFourierSum(Eigen::Vector2d center,
+                                               CoefficientsList cos_list,
                                                CoefficientsList sin_list,
                                                double tmin, double tmax)
-    : cosine_(cos_list), sine_(sin_list), tmin_(tmin), tmax_(tmax) {
+    : center_(center), cosine_(cos_list), sine_(sin_list), tmin_(tmin),
+      tmax_(tmax) {
   // Checking consistency
   assert(cosine_.cols() == sine_.cols());
 }
@@ -46,7 +48,7 @@ Eigen::Vector2d ParametrizedFourierSum::operator()(double t) const {
   // Matrix multiplication to create the Fourier Sum (in vector form)
   // [2 x N] X [N x 1] = [2 x 1]
   Eigen::Vector2d point = cosine_ * cos_theta + sine_ * sin_theta;
-  return point;
+  return point + center_;
 }
 
 Eigen::Vector2d ParametrizedFourierSum::Derivative(double t) const {
@@ -102,9 +104,11 @@ PanelVector ParametrizedFourierSum::split(unsigned int N) const {
     // Partitioning by splitting the parameter range [tmin,tmax]
     double tmin = tmin_ + i * (tmax_ - tmin_) / N;
     double tmax = tmin_ + (i + 1) * (tmax_ - tmin_) / N;
+    if (i == N - 1)
+      tmax = tmax_;
     // Adding the part parametrization to the vector with a shared pointer
-    parametrization_parts.push_back(
-        std::make_shared<ParametrizedFourierSum>(cosine_, sine_, tmin, tmax));
+    parametrization_parts.push_back(std::make_shared<ParametrizedFourierSum>(
+        center_, cosine_, sine_, tmin, tmax));
   }
   return parametrization_parts;
 }

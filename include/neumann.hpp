@@ -55,7 +55,8 @@ inline Eigen::VectorXd MassVector(const ParametrizedMesh &mesh,
     }
     // Local to global mapping of the elements
     for (unsigned int I = 0; I < q; ++I) {
-      int II = space.LocGlobMap(I + 1, panel + 1, numpanels) - 1;
+      // int II = space.LocGlobMap(I + 1, panel + 1, numpanels) - 1;
+      int II = space.LocGlobMap2(I + 1, panel + 1, mesh) - 1;
       // Filling the vector entries
       output(II) += local(I);
     }

@@ -1,7 +1,6 @@
 set(CMAKE_CXX_FLAGS "-std=c++11 -DNDEBUG")
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
-include_directories(/usr/include/eigen3)
 
 add_subdirectory(Parametrizations)
 

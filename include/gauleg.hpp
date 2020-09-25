@@ -8,20 +8,30 @@
 #ifndef GAULEGHPP
 #define GAULEGHPP
 
+#include <cmath>
+#include <exception>
+#include <iostream>
+
 #include "logweight_quadrature.hpp"
 #include <Eigen/Dense>
-#include <cmath>
-#include <iostream>
-#include <cmath>
 #define _USE_MATH_DEFINES
 
-/* @brief Compute Gaussian quadrature nodes and weights for n nodes over
+/* Compute Gaussian quadrature nodes and weights for n nodes over
  * interval [a,b] \param[in] a,b Interval [a,b] endpoints \param[in] n Number of
  * quadrature points \param[out] xq,wq Pair of Gauss-Legendre quadrature points
  * and weights
+ *
+ * @param a Lower end of the domain
+ * @param b Upper end of the domain
+ * @param n Order for the quadrature rule
+ * @param eps Tolerane level for the quadrature rule
+ * @return std pair object containing weights and nodes in Eigen:VectorXd
  */
 inline std::pair<Eigen::RowVectorXd, Eigen::RowVectorXd>
 gauleg(double a, double b, int n, double eps = 1.e-13) {
+  if (a > b)
+    throw std::domain_error("Domain end points not ordered!");
+
   int i, j, m;
   double xmid, xlen, p1, p2, p3, dp1, z, z1, wqi;
   Eigen::RowVectorXd xq(n), wq(n);
@@ -64,6 +74,14 @@ gauleg(double a, double b, int n, double eps = 1.e-13) {
   return std::make_pair(xq, wq);
 }
 
+/**
+ * This function is evaluates a standard Gaussian Quadrature rule for the domain
+ * [-1,1] for the given order. The quadrature rule is returned in the form of a
+ * QuadRule object
+ *
+ * @param N Order for Gaussian Quadrature
+ * @return QuadRule object containing the quadrature rule
+ */
 inline QuadRule getGaussQR(unsigned N) {
   // Getting standard Gauss Legendre Quadrature weights and nodes
   Eigen::RowVectorXd weights, points;

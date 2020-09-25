@@ -1,25 +1,21 @@
-#include <stdlib.h>
 #include <cassert>
+#include <chrono>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+#include <stdlib.h>
 #include <utility>
-#include <chrono>
 
-#include "gtest/gtest.h"
-#include <Eigen/Sparse>
-#include <Eigen/Dense>
+#include "BoundaryMesh.hpp"
+#include "abstract_bem_space.hpp"
 #include "buildK.hpp"
 #include "buildM.hpp"
 #include "buildV.hpp"
 #include "buildW.hpp"
-#include "doubleLayerPotential.hpp"
-#include "singleLayerPotential.hpp"
-#include "BoundaryMesh.hpp"
-#include "abstract_bem_space.hpp"
 #include "continuous_space.hpp"
 #include "dirichlet.hpp"
 #include "discontinuous_space.hpp"
+#include "doubleLayerPotential.hpp"
 #include "double_layer.hpp"
 #include "hypersingular.hpp"
 #include "integral_gauss.hpp"
@@ -28,8 +24,13 @@
 #include "parametrized_fourier_sum.hpp"
 #include "parametrized_line.hpp"
 #include "parametrized_mesh.hpp"
+#include "parametrized_polynomial.hpp"
 #include "parametrized_semi_circle.hpp"
+#include "singleLayerPotential.hpp"
 #include "single_layer.hpp"
+#include "gtest/gtest.h"
+#include <Eigen/Dense>
+#include <Eigen/Sparse>
 
 #define _USE_MATH_DEFINES // for pi
 
@@ -64,6 +65,31 @@ TEST(LineParametrizationTest, Derivative) {
   // Derivative at the point corresponding to t = 0.3
   testpoint = parametrization.Derivative(0.3);
   EXPECT_NEAR(-1, testpoint(1) / testpoint(0), eps);
+}
+
+TEST(PolynomialParametrizationTest, Parametrization) {
+  double a = 0.3;
+  // Initializing the coefficients for polynomial parametrization(parabola)
+  Eigen::MatrixXd coeffs(2, 3);
+  coeffs << a, 0, 1, 0, 1, 0;
+  parametricbem2d::ParametrizedPolynomial curve(coeffs);
+  Eigen::Vector2d testpoint;
+  // Testing the evaluation operator
+  testpoint = curve(0.5);
+  EXPECT_NEAR(a + 0.25, testpoint(0), eps);
+  EXPECT_NEAR(0.5, testpoint(1), eps);
+}
+
+TEST(PolynomialParametrizationTest, Derivative) {
+  double a = 0.3;
+  // Initializing the coefficients for polynomial parametrization(parabola)
+  Eigen::MatrixXd coeffs(2, 3);
+  coeffs << a, 0, 1, 0, 1, 0;
+  parametricbem2d::ParametrizedPolynomial curve(coeffs);
+  Eigen::Vector2d testpoint;
+  // Testing the derivative function
+  testpoint = curve.Derivative(0.5);
+  EXPECT_NEAR(1, testpoint(1) / testpoint(0), eps);
 }
 
 TEST(SemiCircleParametrizationTest, Parametrization) {
@@ -123,7 +149,8 @@ TEST(FourierSumParametrizationTest, Parametrization) {
   b << 0., 1.;
   // The fourier sum parametrization using these coefficients reduces to
   // (cos(t),sin(t))
-  parametricbem2d::ParametrizedFourierSum parametrization(a, b);
+  parametricbem2d::ParametrizedFourierSum parametrization(Eigen::Vector2d(0, 0),
+                                                          a, b);
   // Random point in [0,1]
   double t = rand() / RAND_MAX;
   t = 2 * t - 1; // Transforming to the range [-1,1]
@@ -288,6 +315,16 @@ TEST(Split, ParametrizedLine) {
         (components[i]->operator()(1) - components[i + 1]->operator()(-1))
             .norm(),
         0, eps);
+
+    EXPECT_NEAR(
+        (components[i]->Derivative(1) - components[i + 1]->Derivative(-1))
+            .norm(),
+        0, eps);
+
+    EXPECT_NEAR((components[i]->DoubleDerivative(1) -
+                 components[i + 1]->DoubleDerivative(-1))
+                    .norm(),
+                0, eps);
   }
 }
 
@@ -310,6 +347,16 @@ TEST(Split, ParametrizedCircularArc) {
         (components[i]->operator()(1) - components[i + 1]->operator()(-1))
             .norm(),
         0, eps);
+
+    EXPECT_NEAR(
+        (components[i]->Derivative(1) - components[i + 1]->Derivative(-1))
+            .norm(),
+        0, eps);
+
+    EXPECT_NEAR((components[i]->DoubleDerivative(1) -
+                 components[i + 1]->DoubleDerivative(-1))
+                    .norm(),
+                0, eps);
   }
 }
 
@@ -319,20 +366,62 @@ TEST(Split, ParametrizedFourierSum) {
   Eigen::MatrixXd b(2, 1); // sine coefficients ; N = 1
   a << 1., 0.;
   b << 0., 1.;
-  parametricbem2d::ParametrizedFourierSum parametrization(a, b);
+  parametricbem2d::ParametrizedFourierSum parametrization(Eigen::Vector2d(0, 0),
+                                                          a, b);
   // Number of split components
   unsigned int N = 10;
   using PanelVector = parametricbem2d::PanelVector;
   PanelVector components = parametrization.split(N);
   // Confirming that the components form a sequence
-  for (unsigned int i = 0; i < N - 1; ++i)
+  for (unsigned int i = 0; i < N - 1; ++i) {
     EXPECT_NEAR(
         (components[i]->operator()(1) - components[i + 1]->operator()(-1))
             .norm(),
         0, eps);
+
+    EXPECT_NEAR(
+        (components[i]->Derivative(1) - components[i + 1]->Derivative(-1))
+            .norm(),
+        0, eps);
+
+    EXPECT_NEAR((components[i]->DoubleDerivative(1) -
+                 components[i + 1]->DoubleDerivative(-1))
+                    .norm(),
+                0, eps);
+  }
 }
 
-TEST(ParametrizedMeshTest, DISABLED_MemberFunctions) {
+TEST(Split, ParametrizedPolynomial) {
+  // Testing the Split functionality for a parametrized line
+  double a = 0.3;
+  // Initializing the coefficients for polynomial parametrization(parabola)
+  Eigen::MatrixXd coeffs(2, 3);
+  coeffs << a, 0, 1, 0, 1, 0;
+  parametricbem2d::ParametrizedPolynomial parametrization(coeffs);
+  // Number of split components
+  unsigned int N = 10;
+  using PanelVector = parametricbem2d::PanelVector;
+  PanelVector components = parametrization.split(N);
+  // Confirming that the components form a sequence
+  for (unsigned int i = 0; i < N - 1; ++i) {
+    EXPECT_NEAR(
+        (components[i]->operator()(1) - components[i + 1]->operator()(-1))
+            .norm(),
+        0, eps);
+
+    EXPECT_NEAR(
+        (components[i]->Derivative(1) - components[i + 1]->Derivative(-1))
+            .norm(),
+        0, eps);
+
+    EXPECT_NEAR((components[i]->DoubleDerivative(1) -
+                 components[i + 1]->DoubleDerivative(-1))
+                    .norm(),
+                0, eps);
+  }
+}
+
+TEST(ParametrizedMeshTest, MemberFunctions) {
   using PanelVector = parametricbem2d::PanelVector;
   // Definition of corner points for the polygon
   Eigen::RowVectorXd x1(2);
@@ -450,7 +539,7 @@ TEST(SingleLayer_1, DISABLED_PanelOrientedAssembly) {
   EXPECT_EQ(8, galerkin.rows());
 }
 
-TEST(SingleLayer_0, DISABLED_CppHilbertComparison) {
+TEST(SingleLayer_0, CppHilbertComparison) {
   using PanelVector = parametricbem2d::PanelVector;
   // Corner points for the polygon
   Eigen::RowVectorXd x1(2);
@@ -499,6 +588,9 @@ TEST(SingleLayer_0, DISABLED_CppHilbertComparison) {
   Eigen::MatrixXd galerkinold;
   computeV(galerkinold, boundarymesh, 0);
   // Finding error using matrix norm
+  // std::cout << "Galerkin old" << std::endl << galerkinold << std::endl;
+  // std::cout << "Galerkin new" << std::endl << galerkinnew << std::endl;
+  std::cout << (galerkinold - galerkinnew).norm() << std::endl;
   EXPECT_NEAR((galerkinold - galerkinnew).norm(), 0, eps);
 }
 
@@ -544,7 +636,7 @@ TEST(DoubleLayer_1_0, DISABLED_PanelOrientedAssembly) {
   EXPECT_EQ(numpanels, galerkin.rows());
 }
 
-TEST(DoubleLayer_1_0, DISABLED_CppHilbertComparison) {
+TEST(DoubleLayer_1_0, CppHilbertComparison) {
   using PanelVector = parametricbem2d::PanelVector;
   // Corner points for the polygon
   Eigen::RowVectorXd x1(2);
@@ -595,6 +687,7 @@ TEST(DoubleLayer_1_0, DISABLED_CppHilbertComparison) {
   Eigen::MatrixXd galerkinold;
   computeK(galerkinold, boundarymesh, 0);
   // Finding error using matrix norm
+  std::cout << (galerkinold - galerkin).norm() << std::endl;
   EXPECT_NEAR((galerkinold - galerkin).norm(), 0, eps);
 }
 
@@ -640,7 +733,7 @@ TEST(DoubleLayer_0_0, DISABLED_PanelOrientedAssembly) {
   EXPECT_EQ(numpanels, galerkin.rows());
 }
 
-TEST(DoubleLayer_0_0, DISABLED_CppHilbertComparison) {
+TEST(DoubleLayer_0_0, CppHilbertComparison) {
   using PanelVector = parametricbem2d::PanelVector;
   // Corner points for the polygon
   Eigen::RowVectorXd x1(2);
@@ -690,6 +783,7 @@ TEST(DoubleLayer_0_0, DISABLED_CppHilbertComparison) {
   // Galerkin Matrix computed using CppHilbert
   Eigen::MatrixXd galerkinold;
   computeK00(galerkinold, boundarymesh, 0);
+  std::cout << (galerkinold - galerkin).norm() << std::endl;
   // Finding error using matrix norm
   EXPECT_NEAR((galerkinold - galerkin).norm(), 0, eps);
 }
@@ -772,7 +866,7 @@ TEST(Hypersingular_1, DISABLED_PanelOrientedAssembly) {
   EXPECT_EQ(numpanels, galerkin.rows());
 }
 
-TEST(Hypersingular_1, DISABLED_CppHilbertComparison) {
+TEST(Hypersingular_1, CppHilbertComparison) {
   using PanelVector = parametricbem2d::PanelVector;
   // Corner points for the polygon
   Eigen::RowVectorXd x1(2);
@@ -820,11 +914,12 @@ TEST(Hypersingular_1, DISABLED_CppHilbertComparison) {
   // Galerkin Matrix computed using CppHilbert
   Eigen::MatrixXd galerkinold;
   computeW(galerkinold, boundarymesh, 0);
+  std::cout << (galerkinold - galerkinnew).norm() << std::endl;
   // Finding error using matrix norm
   EXPECT_NEAR((galerkinold - galerkinnew).norm(), 0, eps);
 }
 
-TEST(MassMatrix00, DISABLED_CppHilbertComparison) {
+TEST(MassMatrix00, CppHilbertComparison) {
   using PanelVector = parametricbem2d::PanelVector;
   // Corner points for the polygon
   Eigen::RowVectorXd x1(2);
@@ -877,7 +972,7 @@ TEST(MassMatrix00, DISABLED_CppHilbertComparison) {
   EXPECT_NEAR((fullmass - massnew).norm(), 0, eps);
 }
 
-TEST(MassMatrix11, DISABLED_CppHilbertComparison) {
+TEST(MassMatrix11, CppHilbertComparison) {
   using PanelVector = parametricbem2d::PanelVector;
   // Corner points for the polygon
   Eigen::RowVectorXd x1(2);
@@ -930,7 +1025,7 @@ TEST(MassMatrix11, DISABLED_CppHilbertComparison) {
   EXPECT_NEAR((fullmass - massnew).norm(), 0, eps);
 }
 
-TEST(MassMatrix01, DISABLED_CppHilbertComparison) {
+TEST(MassMatrix01, CppHilbertComparison) {
   using PanelVector = parametricbem2d::PanelVector;
   // Corner points for the polygon
   Eigen::RowVectorXd x1(2);
@@ -984,7 +1079,7 @@ TEST(MassMatrix01, DISABLED_CppHilbertComparison) {
   EXPECT_NEAR((fullmass - massnew).norm(), 0, eps);
 }
 
-TEST(ADNUMCSE_1_9, DISABLED_DirectFirstKind) {
+TEST(ADNUMCSE_1_9, DirectFirstKind) {
   // Solving the Dirichlet BVP given in problem 1.9 in ADNUMCSE problems
   using namespace parametricbem2d;
   using PanelVector = parametricbem2d::PanelVector;
@@ -995,7 +1090,8 @@ TEST(ADNUMCSE_1_9, DISABLED_DirectFirstKind) {
   Eigen::MatrixXd sin_list(2, 2);
   sin_list << 0, 0, 0.375, 0;
   // Parametrization of the kite given
-  parametricbem2d::ParametrizedFourierSum kite(cos_list, sin_list, -M_PI, M_PI);
+  parametricbem2d::ParametrizedFourierSum kite(Eigen::Vector2d(0, 0), cos_list,
+                                               sin_list, -M_PI, M_PI);
   // The number of panels for the mesh
   unsigned numpanels = 30;
   // Getting the mesh by splitting the fourier parametrization
@@ -1085,9 +1181,10 @@ TEST(ADNUMCSE_1_9, DISABLED_DirectSecondKind) {
   Eigen::MatrixXd sin_list(2, 2);
   sin_list << 0, 0, 0.375, 0;
   // Parametrization of the kite given
-  parametricbem2d::ParametrizedFourierSum kite(cos_list, sin_list, -M_PI, M_PI);
+  parametricbem2d::ParametrizedFourierSum kite(Eigen::Vector2d(0, 0), cos_list,
+                                               sin_list, -M_PI, M_PI);
   // The number of panels for the mesh
-  unsigned numpanels = 10;
+  unsigned numpanels = 5;
   // Getting the mesh by splitting the fourier parametrization
   parametricbem2d::ParametrizedMesh mesh(kite.split(numpanels));
   PanelVector panels = mesh.getPanels();
@@ -1129,8 +1226,8 @@ TEST(ADNUMCSE_1_9, DISABLED_DirectSecondKind) {
   Eigen::VectorXd soldfk =
       parametricbem2d::dirichlet_bvp::direct_first_kind::solve(mesh, Td, order);
 
-  std::cout << "dfk Tn: \n" << soldfk << std::endl;
-  std::cout << "dsk Tn: \n" <<  sol << std::endl;
+  // std::cout << "dfk Tn: \n" << soldfk << std::endl;
+  // std::cout << "dsk Tn: \n" <<  sol << std::endl;
 
   // Same trial and test spaces
   DiscontinuousSpace<0> trial_space;
@@ -1147,7 +1244,7 @@ TEST(ADNUMCSE_1_9, DISABLED_DirectSecondKind) {
             << std::endl;*/
 }
 
-TEST(ADNUMCSE_1_9, DISABLED_IndirectFirstKind) {
+TEST(ADNUMCSE_1_9, IndirectFirstKind) {
   // Solving the Dirichlet BVP given in problem 1.9 in ADNUMCSE problems
   using namespace parametricbem2d;
   using PanelVector = parametricbem2d::PanelVector;
@@ -1158,7 +1255,8 @@ TEST(ADNUMCSE_1_9, DISABLED_IndirectFirstKind) {
   Eigen::MatrixXd sin_list(2, 2);
   sin_list << 0, 0, 0.375, 0;
   // Parametrization of the kite given
-  parametricbem2d::ParametrizedFourierSum kite(cos_list, sin_list, -M_PI, M_PI);
+  parametricbem2d::ParametrizedFourierSum kite(Eigen::Vector2d(0, 0), cos_list,
+                                               sin_list, -M_PI, M_PI);
   // The number of panels for the mesh
   unsigned numpanels = 50;
   // Getting the mesh
@@ -1188,7 +1286,7 @@ TEST(ADNUMCSE_1_9, DISABLED_IndirectFirstKind) {
   std::cout << "error: " << fabs(u - u_ex) << std::endl;
 }
 
-TEST(ADNUMCSE_1_9, DISABLED_IndirectSecondKind) {
+TEST(ADNUMCSE_1_9, IndirectSecondKind) {
   // Solving the Dirichlet BVP given in problem 1.9 in ADNUMCSE problems
   using namespace parametricbem2d;
   using PanelVector = parametricbem2d::PanelVector;
@@ -1199,7 +1297,8 @@ TEST(ADNUMCSE_1_9, DISABLED_IndirectSecondKind) {
   Eigen::MatrixXd sin_list(2, 2);
   sin_list << 0, 0, 0.375, 0;
   // Parametrization of the kite given
-  parametricbem2d::ParametrizedFourierSum kite(cos_list, sin_list, -M_PI, M_PI);
+  parametricbem2d::ParametrizedFourierSum kite(Eigen::Vector2d(0, 0), cos_list,
+                                               sin_list, -M_PI, M_PI);
   // The number of panels for the mesh
   unsigned numpanels = 50;
   // Getting the mesh by splitting the fourier parametrization
@@ -1229,7 +1328,7 @@ TEST(ADNUMCSE_1_9, DISABLED_IndirectSecondKind) {
   std::cout << "error: " << fabs(u - u_ex) << std::endl;
 }
 
-TEST(NEUMANNBVP, DISABLED_DirectFirstKind) {
+TEST(NEUMANNBVP, DirectFirstKind) {
   // Solving Neumann BVP on a unit disk. Exact u = r cos(phi)
   using namespace parametricbem2d;
   using PanelVector = parametricbem2d::PanelVector;
@@ -1247,7 +1346,7 @@ TEST(NEUMANNBVP, DISABLED_DirectFirstKind) {
   PanelVector panels = mesh.getPanels();
   // Lambda function for Neumann Trace
   std::function<double(double, double)> Tn = [&](double x1, double x2) {
-    return x1/R; //cos(phi)
+    return x1 / R; // cos(phi)
   };
   // Lambda function for Dirichlet Trace
   std::function<double(double, double)> Td = [&](double x, double y) {
@@ -1272,7 +1371,7 @@ TEST(NEUMANNBVP, DISABLED_DirectFirstKind) {
   std::cout << "error_coeffs.norm() " << error_coeffs.norm() << std::endl;
 }
 
-TEST(NEUMANNBVP, DISABLED_DirectSecondKind) {
+TEST(NEUMANNBVP, DirectSecondKind) {
   // Solving Neumann BVP on a unit disk. Exact u = r cos(phi)
   using namespace parametricbem2d;
   using PanelVector = parametricbem2d::PanelVector;
@@ -1290,7 +1389,7 @@ TEST(NEUMANNBVP, DISABLED_DirectSecondKind) {
   PanelVector panels = mesh.getPanels();
   // Lambda function for Neumann Trace
   std::function<double(double, double)> Tn = [&](double x1, double x2) {
-    return x1/R; //cos(phi)
+    return x1 / R; // cos(phi)
   };
   // Lambda function for Dirichlet Trace
   std::function<double(double, double)> Td = [&](double x, double y) {
@@ -1316,7 +1415,7 @@ TEST(NEUMANNBVP, DISABLED_DirectSecondKind) {
   std::cout << "error_coeffs.norm() " << error_coeffs.norm() << std::endl;
 }
 
-TEST(NEUMANNBVP, DISABLED_IndirectFirstKind) {
+TEST(NEUMANNBVP, IndirectFirstKind) {
   // Solving Neumann BVP on a unit disk. Exact u = r cos(phi)
   using namespace parametricbem2d;
   using PanelVector = parametricbem2d::PanelVector;
@@ -1334,7 +1433,7 @@ TEST(NEUMANNBVP, DISABLED_IndirectFirstKind) {
   PanelVector panels = mesh.getPanels();
   // Lambda function for Neumann Trace
   std::function<double(double, double)> Tn = [&](double x1, double x2) {
-    return x1/R; //cos(phi)
+    return x1 / R; // cos(phi)
   };
   // Lambda function for Dirichlet Trace
   std::function<double(double, double)> Td = [&](double x, double y) {
@@ -1359,7 +1458,7 @@ TEST(NEUMANNBVP, DISABLED_IndirectFirstKind) {
   std::cout << "error: " << fabs(u - u_ex) << std::endl;
 }
 
-TEST(NEUMANNBVP, DISABLED_IndirectSecondKind) {
+TEST(NEUMANNBVP, IndirectSecondKind) {
   // Solving Neumann BVP on a unit disk. Exact u = r cos(phi)
   using namespace parametricbem2d;
   using PanelVector = parametricbem2d::PanelVector;
@@ -1377,7 +1476,7 @@ TEST(NEUMANNBVP, DISABLED_IndirectSecondKind) {
   PanelVector panels = mesh.getPanels();
   // Lambda function for Neumann Trace
   std::function<double(double, double)> Tn = [&](double x1, double x2) {
-    return x1/R; //cos(phi)
+    return x1 / R; // cos(phi)
   };
   // Lambda function for Dirichlet Trace
   std::function<double(double, double)> Td = [&](double x, double y) {
@@ -1403,7 +1502,7 @@ TEST(NEUMANNBVP, DISABLED_IndirectSecondKind) {
   std::cout << "error: " << fabs(u - u_ex) << std::endl;
 }
 
-TEST(Potential, DISABLED_SingleLayer_0) {
+TEST(Potential, SingleLayer_0) {
   // Test for the Single Layer Potential function. Calculating the Single Layer
   // Potential on a circle with center (0,0) and radius R, for a constant
   // function phi. Comparing with the known analytic result.
@@ -1440,7 +1539,7 @@ TEST(Potential, DISABLED_SingleLayer_0) {
   std::cout << "error: " << fabs(u - u_ex) << std::endl;
 }
 
-TEST(Potential, DISABLED_SingleLayer_1) {
+TEST(Potential, SingleLayer_1) {
   // Test for the Single Layer Potential function. Calculating the Single Layer
   // Potential on a circle with center (0,0) and radius R, for a constant
   // function phi. Comparing with the known analytic result.
@@ -1477,7 +1576,7 @@ TEST(Potential, DISABLED_SingleLayer_1) {
   std::cout << "error: " << fabs(u - u_ex) << std::endl;
 }
 
-TEST(Potential, DISABLED_DoubleLayer_0) {
+TEST(Potential, DoubleLayer_0) {
   // Test for the Double Layer Potential function. Calculating the Double Layer
   // Potential on a circle with center (0,0) and radius R, for a constant
   // function phi. Comparing with the known analytic result.
@@ -1514,7 +1613,7 @@ TEST(Potential, DISABLED_DoubleLayer_0) {
   std::cout << "error: " << fabs(u - u_ex) << std::endl;
 }
 
-TEST(Potential, DISABLED_DoubleLayer_1) {
+TEST(Potential, DoubleLayer_1) {
   // Test for the Double Layer Potential function. Calculating the Double Layer
   // Potential on a circle with center (0,0) and radius R, for a constant
   // function phi. Comparing with the known analytic result.
@@ -1551,10 +1650,10 @@ TEST(Potential, DISABLED_DoubleLayer_1) {
   std::cout << "error: " << fabs(u - u_ex) << std::endl;
 }
 
-/*TEST(StableEvaluationOfIntegrands, DISABLED_SingleLayer) {
+TEST(StableEvaluationOfIntegrands, DISABLED_SingleLayer) {
   // Checking stable evaluation by using two very close but disjoint panels
   using PanelVector = parametricbem2d::PanelVector;
-  double eps = 0.001;
+  double eps = 0.00367;
   // Corner points for the polygon
   Eigen::RowVectorXd x1(2);
   x1 << 0, 0; // Point (0,0)
@@ -1569,20 +1668,24 @@ TEST(Potential, DISABLED_DoubleLayer_1) {
   parametricbem2d::ParametrizedLine panel2(x3, x4);
   // BEM space used for calculating the interaction matrix
   parametricbem2d::DiscontinuousSpace<0> space;
+  typedef std::numeric_limits<double> dbl;
+  std::cout.precision(dbl::max_digits10);
+  QuadRule GaussQR = getGaussQR(9);
   Eigen::MatrixXd new_lib =
       parametricbem2d::single_layer::ComputeIntegralGeneral(panel1, panel2,
-                                                            space, 32);
+                                                            space, GaussQR);
   // Interaction Matrix using CppHilbert
   double old_lib = computeVij(x1, x2, x3, x4, 0.);
   std::cout << "exact: " << old_lib << std::endl;
   std::cout << "stable evaluation: " << new_lib << std::endl;
+  std::cout << "error: " << fabs(old_lib - new_lib(0, 0)) << std::endl;
   // EXPECT_NEAR((sol_old - solnew).norm(), 0, eps);
-}*/
+}
 
-/*TEST(StableEvaluationOfIntegrands, DISABLED_DoubleLayer) {
+TEST(StableEvaluationOfIntegrands, DISABLED_DoubleLayer) {
   // Checking stable evaluation by using two very close but disjoint panels
   using PanelVector = parametricbem2d::PanelVector;
-  double eps = 0.001;
+  double eps = 0.005;
   // Corner points for the polygon
   Eigen::RowVectorXd x1(2);
   x1 << 0, 0; // Point (0,0)
@@ -1599,16 +1702,22 @@ TEST(Potential, DISABLED_DoubleLayer_1) {
   parametricbem2d::DiscontinuousSpace<0> test_space;
   // Trial BEM space to be used for computing the Galerkin Matrix
   parametricbem2d::ContinuousSpace<1> trial_space;
+  typedef std::numeric_limits<double> dbl;
+  std::cout.precision(dbl::max_digits10);
+  QuadRule GaussQR = getGaussQR(800);
   Eigen::MatrixXd new_lib =
       parametricbem2d::double_layer::ComputeIntegralGeneral(
-          panel1, panel2, trial_space, test_space, 1000);
+          panel1, panel2, trial_space, test_space, GaussQR);
   // Interaction Matrix using CppHilbert
   double i0, i1;
   computeKij(&i0, &i1, 0., x1, x2, x3, x4);
   std::cout << "stable evaluation: " << new_lib << std::endl;
   std::cout << "exact: " << i0 - i1 << " " << i0 + i1 << std::endl;
+  std::cout << "error: "
+            << std::min(fabs(new_lib(1) - i0 + i1), fabs(new_lib(0) - i0 - i1))
+            << std::endl;
   // EXPECT_NEAR((sol_old - solnew).norm(), 0, eps);
-}*/
+}
 
 int main(int argc, char **argv) {
   srand(time(NULL));

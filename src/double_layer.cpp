@@ -37,8 +37,8 @@ Eigen::MatrixXd InteractionMatrix(const AbstractParametrizedCurve &pi,
     return ComputeIntegralCoinciding(pi, pi_p, trial_space, test_space,
                                      GaussQR);
 
-  else if (fabs((pi(1) - pi_p(-1)).norm()) < tol ||
-           fabs((pi(-1) - pi_p(1)).norm()) < tol) // Adjacent Panels case
+  else if ((pi(1) - pi_p(-1)).norm() / 100. < tol ||
+           (pi(-1) - pi_p(1)).norm() / 100. < tol) // Adjacent Panels case
     return ComputeIntegralAdjacent(pi, pi_p, trial_space, test_space, GaussQR);
 
   else // Disjoint panels case
@@ -86,8 +86,8 @@ Eigen::MatrixXd ComputeIntegralCoinciding(const AbstractParametrizedCurve &pi,
           k = (pi(s) - pi_p(t)).dot(normal) / (pi(s) - pi_p(t)).squaredNorm();
         else // Near singularity
           // Limit evaluated analytically for s -> t
-          k = 0.5 * pi.DoubleDerivative(t).dot(normal) /
-              pi.Derivative(t).squaredNorm();
+          k = 0.5 * pi.DoubleDerivative(0.5 * (t + s)).dot(normal) /
+              pi.Derivative(0.5 * (t + s)).squaredNorm();
 
         return k * F(t) * G(s);
       };
@@ -126,15 +126,22 @@ Eigen::MatrixXd ComputeIntegralAdjacent(const AbstractParametrizedCurve &pi,
       // Panel lengths for local arclength parametrization in
       // \f$\eqref{eq:ap}\f$. Actual values are not required so a length of 1 is
       // used for both the panels
-      double length_pi = 1.;   // Length for panel pi
-      double length_pi_p = 1.; // Length for panel pi_p
 
       // when transforming the parametrizations from [-1,1]->\Pi to local
       // arclength parametrizations [0,|\Pi|] -> \Pi, swap is used to ensure
       // that the common point between the panels corresponds to the parameter 0
       // in both arclength parametrizations
-      bool swap = (pi(1) != pi_p(-1));
+      bool swap = (pi(1) - pi_p(-1)).norm() / 100. >
+                  std::numeric_limits<double>::epsilon();
 
+      double length_pi =
+          2 * pi.Derivative(swap ? -1 : 1)
+                  .norm(); // Length for panel pi to ensure norm of arclength
+                           // parametrization is 1 at the common point
+      double length_pi_p =
+          2 * pi_p.Derivative(swap ? 1 : -1)
+                  .norm(); // Length for panel pi_p to ensure norm of arclength
+                           // parametrization is 1 at the common point
       // Lambda expressions for functions F,G and the integrand in
       // \f$\eqref{eq:Kitrf}\f$
       auto F = [&](double t_pr) { // Function associated with panel pi_p
@@ -183,7 +190,9 @@ Eigen::MatrixXd ComputeIntegralAdjacent(const AbstractParametrizedCurve &pi,
           double t0 = swap ? 1 : -1;
           // Using the analytic limit for r - > 0, \f$\eqref{eq:Nexp}\f$
           Eigen::Vector2d b_r_phi =
-              pi.Derivative(s0) * cos(phi) - pi_p.Derivative(t0) * sin(phi);
+              (swap ? 1 : -1) *
+              (pi.Derivative(s0) * cos(phi) * 2 / length_pi +
+               pi_p.Derivative(t0) * sin(phi) * 2 / length_pi_p);
           return b_r_phi.dot(normal) / b_r_phi.squaredNorm();
         }
       };
@@ -260,12 +269,13 @@ Eigen::MatrixXd ComputeIntegralGeneral(const AbstractParametrizedCurve &pi,
   unsigned N = GaussQR.n; // Quadrature order for the GaussQR object.
   // Calculating the quadrature order for stable evaluation of integrands for
   // disjoint panels as mentioned in \f$\ref{par:distpan}\f$
-  unsigned n0 = 5; // Order for admissible cases
+  unsigned n0 = 9; // Order for admissible cases
   // Admissibility criteria
   double eta = 0.5;
   // Calculating the quadrature order
-  unsigned n = n0 * std::max(1., 1. + log(rho(pi, pi_p) / eta));
-  // std::cout << "calculated rho dl " << log(rho(pi,pi_p)/eta) << std::endl;
+  // N = n0 * std::max(1., 1. + 51 * log(rho(pi, pi_p) / eta));
+  // QuadRule GaussQR = getGaussQR(N);
+  // std::cout << "ComputeIntegralGeneral used with order " << N << std::endl;
   // The number of Reference Shape Functions in space
   int Qtrial = trial_space.getQ();
   // The number of Reference Shape Functions in space
@@ -348,8 +358,10 @@ Eigen::MatrixXd GalerkinMatrix(const ParametrizedMesh mesh,
       // Local to global mapping of the elements in interaction matrix
       for (unsigned int I = 0; I < Qtest; ++I) {
         for (unsigned int J = 0; J < Qtrial; ++J) {
-          int II = test_space.LocGlobMap(I + 1, i + 1, numpanels) - 1;
-          int JJ = trial_space.LocGlobMap(J + 1, j + 1, numpanels) - 1;
+          // int II = test_space.LocGlobMap(I + 1, i + 1, numpanels) - 1;
+          // int JJ = trial_space.LocGlobMap(J + 1, j + 1, numpanels) - 1;
+          int II = test_space.LocGlobMap2(I + 1, i + 1, mesh) - 1;
+          int JJ = trial_space.LocGlobMap2(J + 1, j + 1, mesh) - 1;
           // Filling the Galerkin matrix entries
           output(II, JJ) += interaction_matrix(I, J);
         }
@@ -396,13 +408,12 @@ double Potential(const Eigen::Vector2d &x, const Eigen::VectorXd &coeffs,
       };
       // Local to global mapping
       double local = ComputeIntegral(integrand, -1, 1, GaussQR);
-      unsigned ii = space.LocGlobMap(i + 1, panel + 1, numpanels) - 1;
+      // unsigned ii = space.LocGlobMap(i + 1, panel + 1, numpanels) - 1;
+      unsigned ii = space.LocGlobMap2(i + 1, panel + 1, mesh) - 1;
       // Filling the potentials vector
       potentials(ii) += local;
     }
   }
-  // std::cout << "calculated potentials: " << std::endl << potentials <<
-  // std::endl;
   // Dot product with coefficients to get the final double layer potential
   return coeffs.dot(potentials);
 }

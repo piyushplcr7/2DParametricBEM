@@ -12,11 +12,11 @@
 #ifndef DOUBLELAYERHPP
 #define DOUBLELAYERHPP
 
-#include <Eigen/Dense>
 #include "abstract_bem_space.hpp"
 #include "abstract_parametrized_curve.hpp"
 #include "logweight_quadrature.hpp"
 #include "parametrized_mesh.hpp"
+#include <Eigen/Dense>
 
 namespace parametricbem2d {
 /**

@@ -16,9 +16,9 @@
 #include <utility>
 #include <vector>
 
-#include <Eigen/Dense>
 #include "abstract_parametrized_curve.hpp"
 #include "parametrized_mesh.hpp"
+#include <Eigen/Dense>
 
 namespace parametricbem2d {
 /**
@@ -31,6 +31,7 @@ namespace parametricbem2d {
 template <unsigned int p> class DiscontinuousSpace : public AbstractBEMSpace {
 public:
   DiscontinuousSpace() {
+    throw std::invalid_argument("Class specialization not defined!");
     std::cout << "Error! No specialization defined for p = " << p << std::endl;
   }
 };
@@ -46,7 +47,24 @@ public:
                           unsigned int N) const {
     // Asserting the index of local shape function and the panel number are
     // within limits
-    assert(q <= q_ && n <= N);
+    if (!(q <= q_ && n <= N)) {
+      throw std::out_of_range("Panel/RSF index out of range!");
+    }
+
+    return n;
+  }
+
+  // Local to Global Map
+  unsigned int LocGlobMap2(unsigned int q, unsigned int n,
+                           const ParametrizedMesh &mesh) const {
+    // Getting the mesh information
+    unsigned split = mesh.getSplit();
+    unsigned N = mesh.getNumPanels();
+    // Asserting the index of local shape function and the panel number are
+    // within limits
+    if (!(q <= q_ && n <= N)) {
+      throw std::out_of_range("Panel/RSF index out of range!");
+    }
     return n;
   }
 
@@ -61,7 +79,6 @@ public:
     // The output vector
     unsigned coeffs_size = getSpaceDim(mesh.getNumPanels());
     Eigen::VectorXd coeffs(coeffs_size);
-    // using PanelVector = parametricbem2d::PanelVector;
     PanelVector panels = mesh.getPanels();
     // Filling the coefficients
     for (unsigned i = 0; i < coeffs_size; ++i) {
@@ -79,6 +96,7 @@ public:
     BasisFunctionType b1 = [&](double t) { return 1.; };
     // Adding the reference shape functions to the vector
     referenceshapefunctions_.push_back(b1);
+
     // Reference shape function 1 derivative, defined using a lambda expression
     BasisFunctionType b1dot = [&](double t) { return 0.; };
     // Adding the reference shape function derivatives to the vector
@@ -97,7 +115,28 @@ public:
                           unsigned int N) const {
     // Asserting the index of local shape function and the panel number are
     // within limits
-    assert(q <= q_ && n <= N);
+    if (!(q <= q_ && n <= N)) {
+      throw std::out_of_range("Panel/RSF index out of range!");
+    }
+
+    if (q == 1)
+      return n;
+    else
+      return N + n;
+  }
+
+  // Local to Global Map 2 for annular domain
+  unsigned int LocGlobMap2(unsigned int q, unsigned int n,
+                           const ParametrizedMesh &mesh) const {
+    // Getting the mesh information
+    unsigned split = mesh.getSplit();
+    unsigned N = mesh.getNumPanels();
+    // Asserting the index of local shape function and the panel number are
+    // within limits
+    if (!(q <= q_ && n <= N)) {
+      throw std::out_of_range("Panel/RSF index out of range!");
+    }
+
     if (q == 1)
       return n;
     else
@@ -116,7 +155,6 @@ public:
     unsigned numpanels = mesh.getNumPanels();
     unsigned coeffs_size = getSpaceDim(numpanels);
     Eigen::VectorXd coeffs(coeffs_size);
-    // using PanelVector = parametricbem2d::PanelVector;
     // Filling the coefficients
     for (unsigned i = 0; i < numpanels; ++i) {
       Eigen::Vector2d ptl = mesh.getVertex(i);
@@ -138,6 +176,7 @@ public:
     // Adding the reference shape functions to the vector
     referenceshapefunctions_.push_back(b1);
     referenceshapefunctions_.push_back(b2);
+
     // Reference shape function 1 derivative, defined using a lambda expression
     BasisFunctionType b1dot = [&](double t) { return 0.; };
     // Reference shape function 2 derivative, defined using a lambda expression

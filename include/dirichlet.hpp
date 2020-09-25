@@ -20,6 +20,7 @@
 #include "parametrized_mesh.hpp"
 #include "single_layer.hpp"
 #include <Eigen/Dense>
+#include <Eigen/SVD>
 
 namespace parametricbem2d {
 /**
@@ -45,6 +46,7 @@ inline Eigen::MatrixXd MassMatrix(const ParametrizedMesh &mesh,
   // Getting the panels
   PanelVector panels = mesh.getPanels();
   unsigned numpanels = mesh.getNumPanels();
+  unsigned split = numpanels/2;
   // Getting the space dimensions to fix matrix sizes
   unsigned int rows = x_space.getSpaceDim(numpanels);
   unsigned int cols = y_space.getSpaceDim(numpanels);
@@ -70,8 +72,11 @@ inline Eigen::MatrixXd MassMatrix(const ParametrizedMesh &mesh,
     // Local to global mapping of the elements in interaction
     for (unsigned int I = 0; I < qx; ++I) {
       for (unsigned int J = 0; J < qy; ++J) {
-        int II = x_space.LocGlobMap(I + 1, panel + 1, numpanels) - 1;
-        int JJ = y_space.LocGlobMap(J + 1, panel + 1, numpanels) - 1;
+        // int II = x_space.LocGlobMap(I + 1, panel + 1, numpanels) - 1;
+        // if(split == 0)
+        // int JJ = y_space.LocGlobMap(J + 1, panel + 1, numpanels) - 1;
+        int II = x_space.LocGlobMap2(I + 1, panel + 1, mesh) - 1;
+        int JJ = y_space.LocGlobMap2(J + 1, panel + 1, mesh) - 1;
         // Filling the mass matrix entries
         output(II, JJ) += interaction(I, J);
       }
@@ -124,7 +129,9 @@ Eigen::VectorXd solve(const ParametrizedMesh &mesh,
   // Build rhs for solving
   Eigen::VectorXd rhs = (0.5 * M + K) * g_N;
   // Solving for coefficients
-  Eigen::VectorXd sol = V.lu().solve(rhs);
+  //Eigen::FullPivLU<Eigen::MatrixXd> dec(V);
+  Eigen::HouseholderQR<Eigen::MatrixXd> dec(V);
+  Eigen::VectorXd sol = dec.solve(rhs);
   return sol;
 }
 } // namespace direct_first_kind
@@ -152,10 +159,10 @@ namespace direct_second_kind {
 Eigen::VectorXd solve(const ParametrizedMesh &mesh,
                       std::function<double(double, double)> g, unsigned order) {
   // Same trial and test spaces
-  DiscontinuousSpace<1> trial_space;
-  DiscontinuousSpace<1> test_space;
+  ContinuousSpace<2> trial_space;
+  ContinuousSpace<2> test_space;
   // Space used for interpolation of Dirichlet data
-  DiscontinuousSpace<1> g_interpol_space;
+  ContinuousSpace<2> g_interpol_space;
   // Computing W matrix
   Eigen::MatrixXd W =
       hypersingular::GalerkinMatrix(mesh, g_interpol_space, order);
@@ -170,7 +177,13 @@ Eigen::VectorXd solve(const ParametrizedMesh &mesh,
   Eigen::MatrixXd lhs = (0.5 * M - Kp);
   // Build rhs for solving
   Eigen::VectorXd rhs = W * g_N;
-  Eigen::VectorXd sol = lhs.lu().solve(rhs);
+  // Eigen::JacobiSVD<Eigen::MatrixXd> svd(lhs, ComputeThinU | ComputeThinV);
+  // Eigen::VectorXd svals = svd.singularValues();
+  // std::cout << "svals \n" << svals << std::endl;
+  // std::cout << "Condition number: " << svals(0)/svals(M.rows()-1) <<
+  // std::endl;
+  Eigen::FullPivLU<Eigen::MatrixXd> dec(lhs);
+  Eigen::VectorXd sol = dec.solve(rhs);
   return sol;
 }
 } // namespace direct_second_kind
@@ -210,7 +223,8 @@ Eigen::VectorXd solve(const ParametrizedMesh &mesh,
   // Build rhs for solving
   Eigen::VectorXd rhs = M * g_N;
   // Solving for coefficients
-  Eigen::VectorXd sol = V.lu().solve(rhs);
+  Eigen::FullPivLU<Eigen::MatrixXd> dec(V);
+  Eigen::VectorXd sol = dec.solve(rhs);
   return sol;
 }
 } // namespace indirect_first_kind
@@ -254,7 +268,8 @@ Eigen::VectorXd solve(const ParametrizedMesh &mesh,
   // Build rhs for solving
   Eigen::VectorXd rhs = Mr * g_N;
   // Solving for coefficients
-  Eigen::VectorXd sol = lhs.lu().solve(rhs);
+  Eigen::FullPivLU<Eigen::MatrixXd> dec(lhs);
+  Eigen::VectorXd sol = dec.solve(rhs);
   return sol;
 }
 } // namespace indirect_second_kind

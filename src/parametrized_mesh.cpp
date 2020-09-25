@@ -9,19 +9,26 @@
 #include "parametrized_mesh.hpp"
 
 #include <utility>
+#include <limits>
 
 #include <Eigen/Dense>
 
 namespace parametricbem2d {
 
 ParametrizedMesh::ParametrizedMesh(PanelVector panels) : panels_(panels) {
+  // std::cout << "ParametrizedMesh constructor called!" << std::endl;
   unsigned int N = getNumPanels();
-  // Enforcing the constraint for the mesh where end point of a panel has to be
-  // the starting point of the next such that the panels form a curved polygon
-  for (unsigned int i = 0; i < N; ++i)
-    assert(fabs((panels_[i % N]->operator()(1) -
-                 panels_[(i + 1) % N]->operator()(-1))
-                    .norm()) < 1e-5);
+  // Determining the split value by looping over the panels in the mesh. Non
+  // zero split indicates two distinct boundaries in the mesh object. Used when
+  // dealing with an annular domain
+  for (unsigned int i = 0; i < N; ++i) {
+    if ((panels[0]->operator()(-1.) - panels[i]->operator()(1.)).norm() <
+        10*std::numeric_limits<double>::epsilon()) {
+      // std::cout << "Break in continuity at position "<< i << std::endl;
+      split_ = (i + 1) % N;
+    }
+  }
+  // std::cout << "split : " << split_ << std::endl;
 }
 
 PanelVector ParametrizedMesh::getPanels() const {

@@ -57,11 +57,30 @@ public:
    */
   Eigen::Vector2d getVertex(unsigned int i) const;
 
+  /**
+   * This function is used for getting the split value for the mesh. If split
+   * is non zero, it indicates the position where the second boundary begins
+   * in the mesh object; the domain is annular. A zero value indicates there is
+   * only one boundary in the mesh object
+   *
+   * @return The position in the mesh where the second boundary begins
+   */
+  unsigned getSplit() const { return split_; }
+
+  //void addPanels(const PanelVector& panels) {
+  //  panels_.insert()
+  //}
+
 private:
   /**
    * Private const field for the PanelVector of the mesh
    */
   const PanelVector panels_;
+  /**
+   * Private unsigned field used to distinguish one boundary from another in the
+   * mesh (annular domain). Indicates the starting position of second boundary.
+   */
+  unsigned split_;
 }; // class ParametrizedMesh
 } // namespace parametricbem2d
 

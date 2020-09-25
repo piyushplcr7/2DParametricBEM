@@ -49,14 +49,16 @@ Eigen::Vector2d ParametrizedLine::DoubleDerivative(double t) const {
 PanelVector ParametrizedLine::split(unsigned int N) const {
   // PanelVector for storing the part parametrizations
   PanelVector parametrization_parts;
+  double tmin, tmax;
+  std::tie(tmin, tmax) = ParameterRange();
   // Generating the parts
   for (int i = 0; i < N; ++i) {
     // Partitioning by splitting the parameter line segment
-    double tmin, tmax;
-    std::tie(tmin, tmax) = ParameterRange();
     // Splitting the parameter range to split the line segment
     double t1 = tmin + i * (tmax - tmin) / N;
     double t2 = tmin + (i + 1) * (tmax - tmin) / N;
+    if (i==N-1)
+      t2 = tmax;
     // Using evaluation on the split parameter range to get line segment split
     // points
     Point first = this->operator()(t1);

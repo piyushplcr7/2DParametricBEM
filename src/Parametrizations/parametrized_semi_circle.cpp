@@ -53,6 +53,8 @@ namespace parametricbem2d {
       Eigen::Vector2d center(2); center << 0,0;
       double phi_start = phi_min + i*(phi_max-phi_min)/N;
       double phi_end = phi_min + (i+1)*(phi_max-phi_min)/N;
+      if (i==N-1)
+        phi_end = phi_max;
       parametrization_parts.push_back(std::make_shared<ParametrizedCircularArc>
                                       (center,radius_,phi_start,phi_end)) ;
     }

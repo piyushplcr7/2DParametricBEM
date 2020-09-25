@@ -15,8 +15,8 @@ namespace parametricbem2d {
 /**
  * \class ParametrizedFourierSum
  * \brief This class represents Fourier Sum based parametrization
- *        of the form \f$\gamma\f$(t) = \f$$\sum_{n=1}^{N} a_n cos(t)+b_n
- *        sin(t)$\f$ and inherits from the Abstract base class representing
+ *        of the form \f$\gamma\f$(t) = \f$$c+\sum_{n=1}^{N} a_n cos(nt)+b_n
+ *        sin(nt)$\f$ and inherits from the Abstract base class representing
  *        parametrized curves
  * @see abstract_parametrized_curve.hpp
  */
@@ -33,11 +33,17 @@ public:
    * that is Eigen::MatrixXd with size: 2 X N.
    * Here N is the number of sine and cosine terms in the sum
    *
+   * @param center Constant term 'c' in the parametrization
    * @param cos_list Coefficient list for cosine terms
    * @param sin_list Coefficient list for sine terms
+   * @param tmin Lower end of the actual parameter interval used which is
+   *             linearly mapped to the standard interval
+   * @param tmax Upper end of the actual parameter interval used which is
+   *             linearly mapped to the standard interval
    */
-  ParametrizedFourierSum(CoefficientsList cos_list, CoefficientsList sin_list,
-                         double tmin = -1., double tmax = 1.);
+  ParametrizedFourierSum(Eigen::Vector2d center, CoefficientsList cos_list,
+                         CoefficientsList sin_list, double tmin = -1.,
+                         double tmax = 1.);
 
   /**
    * See documentation in AbstractParametrizedCurve
@@ -71,12 +77,18 @@ private:
    * parametrization
    */
   const CoefficientsList sine_;
+
   /**
    * Storing the actual range of parameter within the parameter range
    * By default, it is exactly equal to the parameter range. It is used
    * for the split functionality to make part Fourier Sum parameterizations.
    */
   const double tmin_, tmax_;
+
+  /**
+   * The constant term in the parametrization.
+   */
+  Eigen::Vector2d center_;
 }; // class ParametrizedFourierSum
 } // namespace parametricbem2d
 
