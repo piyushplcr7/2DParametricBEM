@@ -1,5 +1,5 @@
 include_directories(${PROJECT_SOURCE_DIR}/include)
-include_directories(../../CppHilbert/Library/source/)
+include_directories(/usr/include/eigen3)
 
 set(CMAKE_CXX_FLAGS "-std=c++11")
 
